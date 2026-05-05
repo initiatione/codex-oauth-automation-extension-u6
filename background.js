@@ -323,6 +323,9 @@ const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
 const PHONE_CODE_WAIT_SECONDS_MIN = 15;
 const PHONE_CODE_WAIT_SECONDS_MAX = 300;
 const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
+const STEP6_COOKIE_CLEAR_DELAY_SECONDS_MIN = 0;
+const STEP6_COOKIE_CLEAR_DELAY_SECONDS_MAX = 300;
+const DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS = 25;
 const PHONE_CODE_TIMEOUT_WINDOWS_MIN = 1;
 const PHONE_CODE_TIMEOUT_WINDOWS_MAX = 10;
 const DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS = 2;
@@ -627,12 +630,15 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoRunDelayMinutes: 30,
   autoStepDelaySeconds: null,
   phoneVerificationEnabled: false,
+  freePhoneReuseEnabled: true,
+  freePhoneReuseAutoEnabled: true,
   signupMethod: DEFAULT_SIGNUP_METHOD,
   phoneSmsProvider: DEFAULT_PHONE_SMS_PROVIDER,
   phoneSmsProviderOrder: [],
   verificationResendCount: DEFAULT_VERIFICATION_RESEND_COUNT,
   phoneVerificationReplacementLimit: DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT,
   phoneCodeWaitSeconds: DEFAULT_PHONE_CODE_WAIT_SECONDS,
+  step6CookieClearDelaySeconds: DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS,
   phoneCodeTimeoutWindows: DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS,
   phoneCodePollIntervalSeconds: DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS,
   phoneCodePollMaxRounds: DEFAULT_PHONE_CODE_POLL_ROUNDS,
@@ -704,7 +710,6 @@ const PERSISTED_SETTING_DEFAULTS = {
 const PERSISTED_SETTING_KEYS = Object.keys(PERSISTED_SETTING_DEFAULTS);
 const SETTINGS_EXPORT_SCHEMA_VERSION = 1;
 const SETTINGS_EXPORT_FILENAME_PREFIX = 'multipage-settings';
-const STEP6_PRE_LOGIN_COOKIE_CLEAR_DELAY_MS = 25000;
 const PRE_LOGIN_COOKIE_CLEAR_DOMAINS = [
   'chatgpt.com',
   'chat.openai.com',
@@ -807,6 +812,7 @@ const DEFAULT_STATE = {
   currentPhoneVerificationCountdownEndsAt: 0,
   currentPhoneVerificationCountdownWindowIndex: 0,
   currentPhoneVerificationCountdownWindowTotal: 0,
+  freeReusablePhoneActivation: null,
   reusablePhoneActivation: null,
   phoneReusableActivationPool: [],
   signupPhoneNumber: '',
@@ -967,6 +973,24 @@ function normalizePhoneCodeWaitSeconds(value, fallback = DEFAULT_PHONE_CODE_WAIT
   return Math.min(
     PHONE_CODE_WAIT_SECONDS_MAX,
     Math.max(PHONE_CODE_WAIT_SECONDS_MIN, Math.floor(numeric))
+  );
+}
+
+function normalizeStep6CookieClearDelaySeconds(value, fallback = DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isFinite(numeric)) {
+    return Math.min(
+      STEP6_COOKIE_CLEAR_DELAY_SECONDS_MAX,
+      Math.max(
+        STEP6_COOKIE_CLEAR_DELAY_SECONDS_MIN,
+        Math.floor(Number(fallback) || DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS)
+      )
+    );
+  }
+  return Math.min(
+    STEP6_COOKIE_CLEAR_DELAY_SECONDS_MAX,
+    Math.max(STEP6_COOKIE_CLEAR_DELAY_SECONDS_MIN, Math.floor(numeric))
   );
 }
 
@@ -2240,6 +2264,8 @@ function normalizePersistentSettingValue(key, value) {
     case 'oauthFlowTimeoutEnabled':
     case 'autoRunDelayEnabled':
     case 'phoneVerificationEnabled':
+    case 'freePhoneReuseEnabled':
+    case 'freePhoneReuseAutoEnabled':
     case 'plusModeEnabled':
       return Boolean(value);
     case 'phoneSmsProvider':
@@ -2258,6 +2284,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizePhoneVerificationReplacementLimit(value, DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT);
     case 'phoneCodeWaitSeconds':
       return normalizePhoneCodeWaitSeconds(value, DEFAULT_PHONE_CODE_WAIT_SECONDS);
+    case 'step6CookieClearDelaySeconds':
+      return normalizeStep6CookieClearDelaySeconds(value, DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS);
     case 'phoneCodeTimeoutWindows':
       return normalizePhoneCodeTimeoutWindows(value, DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS);
     case 'phoneCodePollIntervalSeconds':
@@ -3047,6 +3075,7 @@ async function resetState() {
       'tabRegistry',
       'sourceLastUrls',
       'reusablePhoneActivation',
+      'freeReusablePhoneActivation',
       'phoneReusableActivationPool',
       'luckmailApiKey',
       'luckmailBaseUrl',
@@ -3086,6 +3115,19 @@ async function resetState() {
       .map((entry) => normalizePhonePreferredActivation(entry))
       .filter(Boolean)
     : [];
+  const freeReusablePhoneActivation = (
+    prev.freeReusablePhoneActivation
+    && typeof prev.freeReusablePhoneActivation === 'object'
+    && !Array.isArray(prev.freeReusablePhoneActivation)
+    && String(
+      prev.freeReusablePhoneActivation.phoneNumber
+      ?? prev.freeReusablePhoneActivation.number
+      ?? prev.freeReusablePhoneActivation.phone
+      ?? ''
+    ).trim()
+  )
+    ? prev.freeReusablePhoneActivation
+    : null;
   await chrome.storage.session.clear();
   await chrome.storage.session.set({
     ...DEFAULT_STATE,
@@ -3108,6 +3150,8 @@ async function resetState() {
     currentLuckmailMailCursor: null,
     // Keep reusable phone activation across round resets so the same number can be reactivated up to maxUses.
     reusablePhoneActivation,
+    // Keep free reuse phone activation until the user clears or the flow retires it.
+    freeReusablePhoneActivation,
     phoneReusableActivationPool,
     preferredIcloudHost: prev.preferredIcloudHost || '',
   });
@@ -5402,7 +5446,6 @@ async function withIcloudLoginHelp(actionLabel, action) {
         if (shouldEmitIcloudTransientLog(`${safeActionLabel}:final`)) {
           await addLog(`iCloud：${safeActionLabel}受网络/上下文波动影响：${getErrorMessage(err)}`, 'warn');
         }
-        const safeActionLabel = String(actionLabel || '操作').trim() || '操作';
         const transientError = new Error(`iCloud：${safeActionLabel}受网络/上下文波动影响，请稍后重试。`);
         transientError.code = 'ICLOUD_TRANSIENT_CONTEXT';
         transientError.actionLabel = safeActionLabel;
@@ -6565,6 +6608,53 @@ async function finalizePhoneActivationAfterSuccessfulFlow(state) {
     return null;
   }
   return phoneVerificationHelpers.finalizePendingPhoneActivationConfirmation(state);
+}
+
+async function clearFreeReusablePhoneActivation() {
+  await setState({ freeReusablePhoneActivation: null });
+  broadcastDataUpdate({ freeReusablePhoneActivation: null });
+  await addLog('已清除白嫖复用手机号记录。', 'ok');
+  return { ok: true, freeReusablePhoneActivation: null };
+}
+
+async function setFreeReusablePhoneActivation(record = {}) {
+  const phoneNumber = String(record.phoneNumber || record.number || record.phone || '').trim();
+  if (!phoneNumber) {
+    throw new Error('请先填写白嫖复用手机号。');
+  }
+  const state = await getState();
+  const activationId = String(record.activationId || record.id || record.activation || '').trim();
+  const countryId = Math.max(1, Math.floor(Number(record.countryId) || Number(state.heroSmsCountryId) || HERO_SMS_COUNTRY_ID));
+  const stateCountryLabel = Math.floor(Number(state.heroSmsCountryId) || 0) === countryId
+    ? String(state.heroSmsCountryLabel || '').trim()
+    : '';
+  const countryLabel = String(
+    record.countryLabel
+    || stateCountryLabel
+    || (countryId === HERO_SMS_COUNTRY_ID ? HERO_SMS_COUNTRY_LABEL : `Country #${countryId}`)
+  ).trim();
+  const activation = {
+    ...(activationId ? { activationId } : {}),
+    phoneNumber,
+    provider: PHONE_SMS_PROVIDER_HERO,
+    serviceCode: HERO_SMS_SERVICE_CODE,
+    countryId,
+    ...(countryLabel ? { countryLabel } : {}),
+    successfulUses: Math.max(0, Math.floor(Number(record.successfulUses) || 0)),
+    maxUses: Math.max(1, Math.floor(Number(record.maxUses) || 3)),
+    source: 'free-manual-reuse',
+    recordedAt: Date.now(),
+    manualOnly: !activationId,
+  };
+  await setState({ freeReusablePhoneActivation: activation });
+  broadcastDataUpdate({ freeReusablePhoneActivation: activation });
+  await addLog(
+    activationId
+      ? `已手动记录白嫖复用手机号 ${phoneNumber}（#${activationId}）。`
+      : `已手动记录白嫖复用手机号 ${phoneNumber}。未填写 HeroSMS 激活 ID，仅支持手动填号复用。`,
+    'ok'
+  );
+  return { ok: true, freeReusablePhoneActivation: activation };
 }
 
 // ============================================================
@@ -10543,6 +10633,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   clearAccountRunHistory: (...args) => clearAndBroadcastAccountRunHistory(...args),
   deleteAccountRunHistoryRecords: (...args) => deleteAndBroadcastAccountRunHistoryRecords(...args),
   clearAutoRunTimerAlarm,
+  clearFreeReusablePhoneActivation,
   clearLuckmailRuntimeState,
   clearStopRequest,
   closeLocalhostCallbackTabs,
@@ -10631,6 +10722,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   setContributionMode,
   setEmailState,
   setEmailStateSilently,
+  setFreeReusablePhoneActivation,
   setSignupPhoneState,
   setSignupPhoneStateSilently,
   setIcloudAliasPreservedState,
@@ -10977,13 +11069,23 @@ async function removeCookieDirectly(cookie) {
   }
 }
 
+async function getStep6CookieClearDelayMs() {
+  const settings = await getPersistedSettings();
+  return normalizeStep6CookieClearDelaySeconds(
+    settings?.step6CookieClearDelaySeconds,
+    DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS
+  ) * 1000;
+}
+
 async function runPreStep6CookieCleanup() {
+  const delayMs = await getStep6CookieClearDelayMs();
+  const delaySeconds = Math.round(delayMs / 1000);
   await addLog(
-    `步骤 6：开始前等待 ${Math.round(STEP6_PRE_LOGIN_COOKIE_CLEAR_DELAY_MS / 1000)} 秒，然后直接删除 ChatGPT / OpenAI cookies...`,
+    `步骤 6：开始前等待 ${delaySeconds} 秒，然后直接删除 ChatGPT / OpenAI cookies...`,
     'info'
   );
 
-  await sleepWithStop(STEP6_PRE_LOGIN_COOKIE_CLEAR_DELAY_MS);
+  await sleepWithStop(delayMs);
 
   if (!chrome.cookies?.getAll || !chrome.cookies?.remove) {
     await addLog('步骤 6：当前浏览器不支持 cookies API，无法直接删除 cookies。', 'warn');

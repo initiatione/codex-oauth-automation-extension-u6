@@ -66,6 +66,7 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizePhonePreferredActivation'),
     extractFunction('normalizePhoneVerificationReplacementLimit'),
     extractFunction('normalizePhoneCodeWaitSeconds'),
+    extractFunction('normalizeStep6CookieClearDelaySeconds'),
     extractFunction('normalizePhoneCodeTimeoutWindows'),
     extractFunction('normalizePhoneCodePollIntervalSeconds'),
     extractFunction('normalizePhoneCodePollMaxRounds'),
@@ -93,6 +94,9 @@ const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
 const PHONE_CODE_WAIT_SECONDS_MIN = 15;
 const PHONE_CODE_WAIT_SECONDS_MAX = 300;
 const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
+const STEP6_COOKIE_CLEAR_DELAY_SECONDS_MIN = 0;
+const STEP6_COOKIE_CLEAR_DELAY_SECONDS_MAX = 300;
+const DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS = 25;
 const PHONE_CODE_TIMEOUT_WINDOWS_MIN = 1;
 const PHONE_CODE_TIMEOUT_WINDOWS_MAX = 10;
 const DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS = 2;
@@ -202,6 +206,11 @@ return {
   assert.equal(api.normalizePersistentSettingValue('phoneVerificationReplacementLimit', '9'), 9);
   assert.equal(api.normalizePersistentSettingValue('phoneVerificationReplacementLimit', '-1'), 1);
   assert.equal(api.normalizePersistentSettingValue('phoneCodeWaitSeconds', '75'), 75);
+  assert.equal(api.normalizePersistentSettingValue('step6CookieClearDelaySeconds', undefined), 25);
+  assert.equal(api.normalizePersistentSettingValue('step6CookieClearDelaySeconds', '0'), 0);
+  assert.equal(api.normalizePersistentSettingValue('step6CookieClearDelaySeconds', '32.9'), 32);
+  assert.equal(api.normalizePersistentSettingValue('step6CookieClearDelaySeconds', '-1'), 0);
+  assert.equal(api.normalizePersistentSettingValue('step6CookieClearDelaySeconds', '999'), 300);
   assert.equal(api.normalizePersistentSettingValue('phoneCodeTimeoutWindows', '3'), 3);
   assert.equal(api.normalizePersistentSettingValue('phoneCodePollIntervalSeconds', '6'), 6);
   assert.equal(api.normalizePersistentSettingValue('phoneCodePollMaxRounds', '18'), 18);

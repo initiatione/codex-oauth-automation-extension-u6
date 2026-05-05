@@ -108,7 +108,21 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /id="row-hero-sms-current-code"/);
   assert.match(html, /id="row-hero-sms-preferred-activation"/);
   assert.match(html, /id="select-hero-sms-preferred-activation"/);
+  assert.match(html, /id="row-free-phone-reuse-enabled"/);
+  assert.match(html, /id="input-free-phone-reuse-enabled"/);
+  assert.match(html, /id="row-free-phone-reuse-auto-enabled"/);
+  assert.match(html, /id="input-free-phone-reuse-auto-enabled"/);
+  assert.match(html, /id="row-free-reusable-phone"/);
+  assert.match(html, /id="display-free-reusable-phone"/);
+  assert.match(html, /id="display-free-reusable-phone-country"/);
+  assert.match(html, /id="input-free-reusable-phone"/);
+  assert.match(html, /id="btn-save-free-reusable-phone"/);
+  assert.match(html, /id="btn-clear-free-reusable-phone"/);
+  assert.match(html, /白嫖复用/);
+  assert.match(html, /自动白嫖复用/);
   assert.match(html, /id="row-phone-replacement-limit"/);
+  assert.match(html, /id="row-step6-cookie-clear-delay-seconds"/);
+  assert.match(html, /id="input-step6-cookie-clear-delay-seconds"/);
   assert.match(html, /id="row-phone-verification-resend-count"/);
   assert.match(html, /id="row-phone-code-wait-seconds"/);
   assert.match(html, /id="row-phone-code-timeout-windows"/);
@@ -132,6 +146,72 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /id="row-nex-sms-service-code"/);
   assert.match(html, /id="input-nex-sms-service-code"/);
   assert.doesNotMatch(html, /id="input-account-run-history-text-enabled"/);
+});
+
+test('sidepanel source wires free reusable phone save and clear actions to runtime messages', () => {
+  assert.match(sidepanelSource, /const inputFreePhoneReuseEnabled = document\.getElementById\('input-free-phone-reuse-enabled'\);/);
+  assert.match(sidepanelSource, /const inputFreePhoneReuseAutoEnabled = document\.getElementById\('input-free-phone-reuse-auto-enabled'\);/);
+  assert.match(sidepanelSource, /const displayFreeReusablePhone = document\.getElementById\('display-free-reusable-phone'\);/);
+  assert.match(sidepanelSource, /const inputFreeReusablePhone = document\.getElementById\('input-free-reusable-phone'\);/);
+  assert.match(sidepanelSource, /const btnSaveFreeReusablePhone = document\.getElementById\('btn-save-free-reusable-phone'\);/);
+  assert.match(sidepanelSource, /const btnClearFreeReusablePhone = document\.getElementById\('btn-clear-free-reusable-phone'\);/);
+  assert.match(sidepanelSource, /type:\s*'SET_FREE_REUSABLE_PHONE'/);
+  assert.match(sidepanelSource, /payload:\s*\{\s*phoneNumber\s*\}/s);
+  assert.match(sidepanelSource, /type:\s*'CLEAR_FREE_REUSABLE_PHONE'/);
+});
+
+test('sidepanel keeps free reuse switches realtime and locks them during auto run', () => {
+  assert.match(
+    sidepanelSource,
+    /message\.payload\.freePhoneReuseEnabled !== undefined[\s\S]*updatePhoneVerificationSettingsUI\(\);/
+  );
+  assert.match(
+    sidepanelSource,
+    /message\.payload\.freePhoneReuseAutoEnabled !== undefined[\s\S]*updatePhoneVerificationSettingsUI\(\);/
+  );
+  assert.match(sidepanelSource, /setFreePhoneReuseControlsLocked\(settingsCardLocked\);/);
+  assert.match(
+    sidepanelSource,
+    /inputFreePhoneReuseEnabled\.disabled = locked;[\s\S]*inputFreePhoneReuseAutoEnabled\.disabled = locked/
+  );
+});
+
+test('sidepanel exposes step6 cookie clear delay as realtime locked setting', () => {
+  assert.match(
+    sidepanelSource,
+    /const inputStep6CookieClearDelaySeconds = document\.getElementById\('input-step6-cookie-clear-delay-seconds'\);/
+  );
+  assert.match(
+    sidepanelSource,
+    /step6CookieClearDelaySeconds: step6CookieClearDelaySecondsValue/
+  );
+  assert.match(
+    sidepanelSource,
+    /inputStep6CookieClearDelaySeconds\.value = String\([\s\S]*normalizeStep6CookieClearDelaySecondsValue/
+  );
+  assert.match(
+    sidepanelSource,
+    /inputStep6CookieClearDelaySeconds\.disabled = locked;/
+  );
+  assert.match(
+    sidepanelSource,
+    /message\.payload\.step6CookieClearDelaySeconds !== undefined[\s\S]*inputStep6CookieClearDelaySeconds\.value/
+  );
+});
+
+test('sidepanel free reusable phone paths avoid stale identifiers and empty-save errors', () => {
+  assert.doesNotMatch(
+    sidepanelSource,
+    /applyHeroSmsFallbackSelection\(\s*\[\.\.\.nextPrimaryCountries,\s*\.\.\.nextFallback\]/
+  );
+  assert.match(
+    sidepanelSource,
+    /applyHeroSmsFallbackSelection\(\s*\[\s*nextPrimary,\s*\.\.\.nextFallback\]/
+  );
+  assert.match(
+    sidepanelSource,
+    /if \(!phoneNumber\) \{[\s\S]*请先填写白嫖复用手机号[\s\S]*return;[\s\S]*chrome\.runtime\.sendMessage\(\{\s*type:\s*'SET_FREE_REUSABLE_PHONE'/
+  );
 });
 
 test('sidepanel source wires runtime signup phone field to background sync messages', () => {
@@ -404,6 +484,9 @@ function updateSignupMethodUI() {
 function syncSignupPhoneInputFromState() {
   rowSignupPhone.style.display = inputPhoneVerificationEnabled.checked && latestState.signupPhoneNumber ? '' : 'none';
 }
+function setFreePhoneReuseControlsLocked() {}
+function isAutoRunLockedPhase() { return false; }
+function isAutoRunScheduledPhase() { return false; }
 
 ${extractFunction('updatePhoneVerificationSettingsUI')}
 
@@ -596,6 +679,8 @@ const inputAutoDelayEnabled = { checked: false };
 const inputAutoDelayMinutes = { value: '30' };
 const inputAutoStepDelaySeconds = { value: '' };
 const inputPhoneVerificationEnabled = { checked: true };
+const inputFreePhoneReuseEnabled = { checked: true };
+const inputFreePhoneReuseAutoEnabled = { checked: true };
 const selectPhoneSmsProvider = { value: 'hero-sms' };
 const inputVerificationResendCount = { value: '4' };
 const inputHeroSmsApiKey = { value: 'demo-key' };
@@ -621,6 +706,7 @@ const inputHeroSmsMaxPrice = { value: '0.12' };
 const inputHeroSmsPreferredPrice = { value: '0.0512' };
 const inputPhoneReplacementLimit = { value: '5' };
 const inputPhoneCodeWaitSeconds = { value: '75' };
+const inputStep6CookieClearDelaySeconds = { value: '9' };
 const inputPhoneCodeTimeoutWindows = { value: '3' };
 const inputPhoneCodePollIntervalSeconds = { value: '6' };
 const inputPhoneCodePollMaxRounds = { value: '18' };
@@ -628,6 +714,9 @@ const inputAccountRunHistoryHelperBaseUrl = { value: 'http://127.0.0.1:17373' };
 const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
 const DEFAULT_PHONE_CODE_WAIT_SECONDS = 60;
+const DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS = 25;
+const STEP6_COOKIE_CLEAR_DELAY_SECONDS_MIN = 0;
+const STEP6_COOKIE_CLEAR_DELAY_SECONDS_MAX = 300;
 const DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS = 2;
 const DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5;
 const DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS = 4;
@@ -701,6 +790,7 @@ ${extractFunction('normalizePhoneSmsMaxPriceValue')}
 ${extractFunction('normalizeHeroSmsMaxPriceValue')}
 ${extractFunction('normalizePhoneVerificationReplacementLimit')}
 ${extractFunction('normalizePhoneCodeWaitSecondsValue')}
+${extractFunction('normalizeStep6CookieClearDelaySecondsValue')}
 ${extractFunction('normalizePhoneCodeTimeoutWindowsValue')}
 ${extractFunction('normalizePhoneCodePollIntervalSecondsValue')}
 ${extractFunction('normalizePhoneCodePollMaxRoundsValue')}
@@ -740,6 +830,8 @@ return { collectSettingsPayload };
   assert.deepStrictEqual(payload.nexSmsCountryOrder, [1]);
   assert.equal(payload.nexSmsServiceCode, 'ot');
   assert.equal(payload.heroSmsReuseEnabled, true);
+  assert.equal(payload.freePhoneReuseEnabled, true);
+  assert.equal(payload.freePhoneReuseAutoEnabled, true);
   assert.equal(payload.heroSmsAcquirePriority, 'price');
   assert.equal(payload.heroSmsMaxPrice, '0.12');
   assert.equal(payload.heroSmsPreferredPrice, '0.0512');
@@ -754,6 +846,7 @@ return { collectSettingsPayload };
   });
   assert.equal(payload.phoneVerificationReplacementLimit, 5);
   assert.equal(payload.phoneCodeWaitSeconds, 75);
+  assert.equal(payload.step6CookieClearDelaySeconds, 9);
   assert.equal(payload.phoneCodeTimeoutWindows, 3);
   assert.equal(payload.phoneCodePollIntervalSeconds, 6);
   assert.equal(payload.phoneCodePollMaxRounds, 18);
