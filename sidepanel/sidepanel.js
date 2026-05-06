@@ -100,6 +100,8 @@ const btnSub2ApiGroupMenu = document.getElementById('btn-sub2api-group-menu');
 const sub2ApiGroupCurrent = document.getElementById('sub2api-group-current');
 const sub2ApiGroupMenu = document.getElementById('sub2api-group-menu');
 const btnAddSub2ApiGroup = document.getElementById('btn-add-sub2api-group');
+const rowSub2ApiAccountPriority = document.getElementById('row-sub2api-account-priority');
+const inputSub2ApiAccountPriority = document.getElementById('input-sub2api-account-priority');
 const rowSub2ApiDefaultProxy = document.getElementById('row-sub2api-default-proxy');
 const inputSub2ApiDefaultProxy = document.getElementById('input-sub2api-default-proxy');
 const rowIpProxyEnabled = document.getElementById('row-ip-proxy-enabled');
@@ -1127,6 +1129,7 @@ let currentContributionContentSnapshot = null;
 let contributionContentSnapshotRequestInFlight = null;
 
 const DEFAULT_SUB2API_GROUP_OPTIONS = ['codex', 'openai-plus'];
+const DEFAULT_SUB2API_ACCOUNT_PRIORITY = 1;
 const editableListPickerModule = window.SidepanelEditableListPicker || {};
 const normalizeEditableListValues = editableListPickerModule.normalizeEditableListValues
   || ((...sources) => {
@@ -1174,6 +1177,18 @@ function getSub2ApiGroupOptionsState(state = latestState) {
     state?.sub2apiGroupName
   );
   return options.length ? options : [...DEFAULT_SUB2API_GROUP_OPTIONS];
+}
+
+function normalizeSub2ApiAccountPriorityValue(value, fallback = DEFAULT_SUB2API_ACCOUNT_PRIORITY) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isSafeInteger(numeric) || numeric < 1) {
+    const fallbackNumber = Number(fallback);
+    return Number.isSafeInteger(fallbackNumber) && fallbackNumber >= 1
+      ? fallbackNumber
+      : DEFAULT_SUB2API_ACCOUNT_PRIORITY;
+  }
+  return numeric;
 }
 
 const sub2ApiGroupPicker = createEditableListPicker({
@@ -3056,6 +3071,25 @@ function collectSettingsPayload() {
   const defaultStep6CookieClearDelaySeconds = typeof DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS !== 'undefined'
     ? DEFAULT_STEP6_COOKIE_CLEAR_DELAY_SECONDS
     : 25;
+  const defaultSub2ApiAccountPriority = typeof DEFAULT_SUB2API_ACCOUNT_PRIORITY !== 'undefined'
+    ? DEFAULT_SUB2API_ACCOUNT_PRIORITY
+    : 1;
+  const sub2apiAccountPriorityNormalizer = typeof normalizeSub2ApiAccountPriorityValue === 'function'
+    ? normalizeSub2ApiAccountPriorityValue
+    : ((value, fallback = defaultSub2ApiAccountPriority) => {
+      const rawValue = String(value ?? '').trim();
+      const numeric = Number(rawValue);
+      if (!rawValue || !Number.isSafeInteger(numeric) || numeric < 1) {
+        const fallbackNumber = Number(fallback);
+        return Number.isSafeInteger(fallbackNumber) && fallbackNumber >= 1
+          ? fallbackNumber
+          : defaultSub2ApiAccountPriority;
+      }
+      return numeric;
+    });
+  const sub2apiAccountPriorityInputValue = typeof inputSub2ApiAccountPriority !== 'undefined' && inputSub2ApiAccountPriority
+    ? inputSub2ApiAccountPriority.value
+    : latestState?.sub2apiAccountPriority;
   const defaultPhoneCodeTimeoutWindows = typeof DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS !== 'undefined'
     ? DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS
     : 2;
@@ -3285,6 +3319,10 @@ function collectSettingsPayload() {
     sub2apiPassword: inputSub2ApiPassword.value,
     sub2apiGroupName: selectedSub2ApiGroupName,
     sub2apiGroupNames,
+    sub2apiAccountPriority: sub2apiAccountPriorityNormalizer(
+      sub2apiAccountPriorityInputValue,
+      latestState?.sub2apiAccountPriority
+    ),
     sub2apiDefaultProxyName: inputSub2ApiDefaultProxy.value.trim(),
     ipProxyEnabled: getSelectedIpProxyEnabledSafe(),
     ipProxyService: selectedIpProxyService,
@@ -7272,6 +7310,9 @@ function setFreePhoneReuseControlsLocked(locked) {
   if (inputStep6CookieClearDelaySeconds) {
     inputStep6CookieClearDelaySeconds.disabled = locked;
   }
+  if (inputSub2ApiAccountPriority) {
+    inputSub2ApiAccountPriority.disabled = locked;
+  }
 }
 
 async function setRuntimeEmailState(email) {
@@ -8016,6 +8057,9 @@ function applySettingsState(state) {
   inputSub2ApiEmail.value = state?.sub2apiEmail || '';
   inputSub2ApiPassword.value = state?.sub2apiPassword || '';
   renderSub2ApiGroupOptions(state, state?.sub2apiGroupName || '');
+  if (typeof inputSub2ApiAccountPriority !== 'undefined' && inputSub2ApiAccountPriority) {
+    inputSub2ApiAccountPriority.value = String(normalizeSub2ApiAccountPriorityValue(state?.sub2apiAccountPriority));
+  }
   inputSub2ApiDefaultProxy.value = state?.sub2apiDefaultProxyName || '';
   const normalizedIpProxyService = resolveIpProxyService(state?.ipProxyService);
   const normalizedIpProxyServiceProfiles = typeof normalizeIpProxyServiceProfiles === 'function'
@@ -9792,6 +9836,7 @@ function updatePanelModeUI() {
   rowSub2ApiEmail.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiPassword.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiGroup.style.display = useSub2Api ? '' : 'none';
+  rowSub2ApiAccountPriority.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiDefaultProxy.style.display = useSub2Api ? '' : 'none';
   rowCodex2ApiUrl.style.display = useCodex2Api ? '' : 'none';
   rowCodex2ApiAdminKey.style.display = useCodex2Api ? '' : 'none';
@@ -10534,6 +10579,7 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
     rowCustomPassword,
     rowLocalCpaStep9Mode,
     rowSub2ApiDefaultProxy,
+    rowSub2ApiAccountPriority,
     rowSub2ApiEmail,
     rowSub2ApiGroup,
     rowSub2ApiPassword,
@@ -11875,6 +11921,15 @@ inputSub2ApiGroup.addEventListener('change', () => {
     ),
   });
   markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputSub2ApiAccountPriority.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputSub2ApiAccountPriority.addEventListener('blur', () => {
+  inputSub2ApiAccountPriority.value = String(normalizeSub2ApiAccountPriorityValue(inputSub2ApiAccountPriority.value));
   saveSettings({ silent: true }).catch(() => { });
 });
 btnAddSub2ApiGroup?.addEventListener('click', () => {

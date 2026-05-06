@@ -251,6 +251,7 @@ const DEFAULT_SUB2API_GROUP_NAMES = [
   CONTRIBUTION_SUB2API_PLUS_GROUP_NAME,
 ];
 const DEFAULT_SUB2API_REDIRECT_URI = 'http://localhost:1455/auth/callback';
+const DEFAULT_SUB2API_ACCOUNT_PRIORITY = 1;
 const DEFAULT_IP_PROXY_SERVICE = '711proxy';
 const IP_PROXY_SERVICE_VALUES = ['711proxy', 'lumiproxy', 'iproyal', 'omegaproxy'];
 const IP_PROXY_ENABLED_SERVICE_VALUES = ['711proxy'];
@@ -577,6 +578,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   sub2apiPassword: '',
   sub2apiGroupName: DEFAULT_SUB2API_GROUP_NAME,
   sub2apiGroupNames: DEFAULT_SUB2API_GROUP_NAMES,
+  sub2apiAccountPriority: DEFAULT_SUB2API_ACCOUNT_PRIORITY,
   sub2apiDefaultProxyName: DEFAULT_SUB2API_PROXY_NAME,
   ipProxyEnabled: false,
   ipProxyService: DEFAULT_IP_PROXY_SERVICE,
@@ -2107,6 +2109,18 @@ function normalizeSub2ApiGroupNames(value = '') {
   return names;
 }
 
+function normalizeSub2ApiAccountPriority(value, fallback = DEFAULT_SUB2API_ACCOUNT_PRIORITY) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isSafeInteger(numeric) || numeric < 1) {
+    const fallbackNumber = Number(fallback);
+    return Number.isSafeInteger(fallbackNumber) && fallbackNumber >= 1
+      ? fallbackNumber
+      : DEFAULT_SUB2API_ACCOUNT_PRIORITY;
+  }
+  return numeric;
+}
+
 function normalizePersistentSettingValue(key, value) {
   switch (key) {
     case 'panelMode':
@@ -2127,6 +2141,8 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '').trim();
     case 'sub2apiGroupNames':
       return normalizeSub2ApiGroupNames(value);
+    case 'sub2apiAccountPriority':
+      return normalizeSub2ApiAccountPriority(value);
     case 'sub2apiDefaultProxyName':
       return String(value || '').trim();
     case 'ipProxyEnabled':
