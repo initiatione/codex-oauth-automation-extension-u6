@@ -1,5 +1,8 @@
 /docs/md
 
+/.codex/
+/openspec/
+
 /.github
 /_metadata/
 .vscode
